@@ -1,0 +1,50 @@
+% Parameter correspondence between the discrete-event simulator and the PostgreSQL anchor.
+% Requires: \usepackage{booktabs}   (siunitx optional, not used)
+% Values are those actually configured in the V0/V1 runs; see
+% TgsPanelBSimCheck.cellParameters() and scripts/postgres_anchor/workload_client.py.
+\begin{table}[t]
+  \centering
+  \small
+  \caption{Parameter correspondence between the simulator and the PostgreSQL anchor.
+    One tick is \SI{1}{\micro\second}. The simulator has no analogue of \texttt{hold\_ms}:
+    its lock-hold time \emph{is} its service time, whereas the anchor holds an explicit
+    sleep so that lock holding dominates round-trip cost (condition B2).}
+  \label{tab:validation-parameters}
+  \begin{tabular}{@{}llll@{}}
+    \toprule
+    \textbf{Quantity} & \textbf{Simulator} & \textbf{PostgreSQL anchor} & \textbf{Correspondence} \
+    \midrule
+    \multicolumn{4}{@{}l}{\emph{Workload}} \
+    Footprint size $k$        & \texttt{constantTransactionSize} $=25$ & \texttt{--k 25} & identical \
+    Resource pool $D$         & \texttt{totalResources} $=5000$        & \texttt{resources} rows $=5000$ & identical \
+    Load $N$                  & \texttt{initialTransactions}           & worker threads $W$ & identical \
+    Selection                 & uniform without replacement            & \texttt{rng.sample} & identical \
+    Write fraction            & \texttt{writeFraction} $=1.0$          & every txn writes & identical \
+    \midrule
+    \multicolumn{4}{@{}l}{\emph{Concurrency control}} \
+    Protocol                  & SS2PL, all-or-nothing preclaim         & \texttt{pg\_try\_advisory\_xact\_lock}, all-or-nothing & same discipline \
+    Lock granularity          & \texttt{totalLocks} $=$ \texttt{totalResources} & one advisory id per row & 1 lock per resource \
+    Deadlock                  & impossible by construction             & impossible under sorted acquisition & both structurally free \
+    Waiting                   & admission queue                        & server-side retry, \SI{1}{\milli\second} & \emph{differs}: polling vs.\ queueing \
+    \midrule
+    \multicolumn{4}{@{}l}{\emph{Cost model}} \
+    Service per resource      & \texttt{ioTime}$+$\texttt{cpuTime} $=2000$ ticks & real row update & \emph{fitted}: one scale factor \
+    Lock service              & \texttt{lockIOTime}$+$\texttt{lockCPUTime} $=2$ ticks & advisory acquisition & $1{:}1000$ lock:data ratio \
+    Critical section          & service time (no separate hold)        & \texttt{--hold-ms 500} & \emph{no analogue}; B2 requires $\text{hold}\ge 20\,\text{RTT}$ \
+    Scheduling quantum        & \texttt{stepTimeSlice} $=100$ ticks    & --- & M8: $\ge 100$ quanta per service \
+    Processors                & $700$ I/O, $700$ CPU                   & \texttt{max\_connections} $=700$ & pool never binds \
+    \midrule
+    \multicolumn{4}{@{}l}{\emph{CPR treatment} (V1 only)} \
+    Coupling point            & CU at parent completion, parent holds  & \texttt{DEFERRABLE INITIALLY DEFERRED} & same point \
+    Fan-out                   & \texttt{avgCprsPerResource} $=1$       & \texttt{FOR EACH ROW} & one propagation per written row \
+    Topology                  & \texttt{LINE}, \texttt{totalModels} $=2$ & \texttt{model\_a}\,$\rightarrow$\,\texttt{model\_b} & depth capped at 1 \
+    Emitting fraction         & \texttt{semanticOverlap} $=f_{\text{sim}}$ & \texttt{emits} flag on $f_{\text{pg}}D$ rows &
+      $f_{\text{pg}}=f_{\text{sim}}\frac{\text{total props}}{\text{eligible props}}$ \
+    Propagation target        & (instance, target property)            & \texttt{model\_b.id = NEW.id} & \emph{differs}: many-to-one possible \
+    \midrule
+    \multicolumn{4}{@{}l}{\emph{Measurement}} \
+    Run length                & \SI{200}{\second} simulated, 5 seeds   & \SI{60}{\second}/\SI{10}{\second} window, 5 reps & --- \
+    Comparison quantity       & \texttt{n\_mean}                       & $\overline{H}/k$ from \texttt{pg\_locks} & dimensionless, both arms \
+    \bottomrule
+  \end{tabular}
+\end{table}

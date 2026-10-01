@@ -1,0 +1,5 @@
+package de.tum.tssimulator.queue;
+
+public enum QueueType {
+    PENDING, ADMISSION_WAIT, BLOCKED_TXN, READY_TXN, LOCK, IO, CPU, ROLLBACK, RECONCILIATION, AWAITING_USER_ACTION, WAITING_FOR_GROUP
+}

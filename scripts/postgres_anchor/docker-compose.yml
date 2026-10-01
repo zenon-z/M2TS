@@ -1,0 +1,51 @@
+name: tgs-postgres-anchor
+
+services:
+  postgres:
+    image: postgres:16
+    container_name: tgs_postgres_anchor
+    environment:
+      POSTGRES_USER: tgs
+      POSTGRES_PASSWORD: tgs
+      POSTGRES_DB: tgs
+    ports:
+      # Non-default host port so this doesn't collide with a local Postgres install.
+      #
+      # 15432, not the original 55432: Windows reserves rolling blocks in the 49152+ dynamic range
+      # for Hyper-V/WSL, and 55432 landed inside one of them - `docker compose up` failed with
+      # "bind: An attempt was made to access a socket in a way forbidden by its access permissions",
+      # which reads like a permissions problem and is not one. Check with
+      # `netsh interface ipv4 show excludedportrange protocol=tcp`. Those blocks move on reboot, so
+      # any port above 49152 can break later; 15432 sits below the dynamic range entirely and
+      # cannot be reserved out from under the harness.
+      - "15432:5432"
+    # max_connections must clear the largest W the sweep uses (up to a few hundred, matching the
+    # simulator side's "processor pool must not bind" trap - see the TGS plan's A2/B3) plus a
+    # margin for the setup/calibration client. shared_buffers bumped modestly since the whole
+    # workload is row/advisory-lock contention, not I/O-bound - default 128MB is fine for a
+    # single-table anchor but bumped anyway to keep buffer contention out of the measurement.
+    command:
+      - "postgres"
+      - "-c"
+      - "max_connections=700"
+      - "-c"
+      - "shared_buffers=256MB"
+      # ADDITIVE, and deliberately so: a new -c flag, nothing V0/V1b/V2 depend on is changed.
+      # track_commit_timestamp is restart-requiring, so it cannot be SET per session. V3 needs it to
+      # separate the row's VISIBILITY time (pg_xact_commit_timestamp(xmin)) from its enqueued_at
+      # stamp: clock_timestamp() fires during the INSERT, but the row is invisible to the drain
+      # until COMMIT, so processed_at - enqueued_at carries the producer's own commit latency - a
+      # term the simulator has no counterpart for, since a CU is visible the instant it is created.
+      # Cost is 12 bytes per transaction in pg_commit_ts; it changes no query plan and no timing
+      # path the existing rungs measure.
+      - "-c"
+      - "track_commit_timestamp=on"
+    # Throwaway - no named volume, so `docker compose down -v` (or just `down`, since this has no
+    # volume to persist) leaves nothing behind. Re-run schema.sql after every fresh container.
+    tmpfs:
+      - /var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U tgs -d tgs"]
+      interval: 2s
+      timeout: 2s
+      retries: 30

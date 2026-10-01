@@ -1,0 +1,8 @@
+# Auto detect text files and perform LF normalization
+* text=auto
+
+# Shell scripts MUST keep LF even when checked out on Windows. With `* text=auto`
+# they would arrive CRLF, and a CRLF shebang fails on Linux with the singularly
+# unhelpful "bad interpreter: /usr/bin/env bash^M" - on the campaign host, at the
+# moment you least want to debug line endings.
+*.sh text eol=lf
